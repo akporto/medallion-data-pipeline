@@ -3,6 +3,7 @@ Unit tests for handler.py (Lambda entry point).
 All external dependencies are mocked: S3, idempotency functions, and validate_raw_payload.
 Tests verify the handler's routing logic and SQS partial-batch failure semantics.
 """
+import json
 import uuid
 from unittest.mock import MagicMock, patch
 
@@ -12,6 +13,17 @@ import validator.handler as handler_module
 from validator.handler import lambda_handler
 from validator.idempotency import AlreadyProcessedError
 from validator.validator import ValidationResult
+
+
+def _s3_notification_body(bucket: str = "test-bronze", key: str = "raw/test/event.json") -> str:
+    return json.dumps({
+        "Records": [{
+            "s3": {
+                "bucket": {"name": bucket},
+                "object": {"key": key},
+            }
+        }]
+    })
 
 
 def _sqs_event(*records) -> dict:
@@ -47,6 +59,9 @@ def _invalid_result() -> MagicMock:
 @pytest.fixture
 def mock_s3():
     with patch.object(handler_module, "_s3") as mock:
+        body_mock = MagicMock()
+        body_mock.read.return_value = b'{"raw": "content"}'
+        mock.get_object.return_value = {"Body": body_mock}
         yield mock
 
 
@@ -79,7 +94,7 @@ class TestLambdaHandlerSuccessPath:
         self, mock_s3, mock_validate, mock_acquire_lock, mock_mark_succeeded, mock_mark_failed
     ):
         mock_validate.return_value = _valid_result()
-        event = _sqs_event(_sqs_record("any-body", "msg-v1"))
+        event = _sqs_event(_sqs_record(_s3_notification_body(), "msg-v1"))
 
         result = lambda_handler(event, None)
 
@@ -89,7 +104,7 @@ class TestLambdaHandlerSuccessPath:
         self, mock_s3, mock_validate, mock_acquire_lock, mock_mark_succeeded, mock_mark_failed
     ):
         mock_validate.return_value = _valid_result()
-        event = _sqs_event(_sqs_record("any-body"))
+        event = _sqs_event(_sqs_record(_s3_notification_body()))
 
         lambda_handler(event, None)
 
@@ -102,7 +117,7 @@ class TestLambdaHandlerSuccessPath:
         self, mock_s3, mock_validate, mock_acquire_lock, mock_mark_succeeded, mock_mark_failed
     ):
         mock_validate.return_value = _valid_result()
-        lambda_handler(_sqs_event(_sqs_record("any-body")), None)
+        lambda_handler(_sqs_event(_sqs_record(_s3_notification_body())), None)
 
         mock_mark_succeeded.assert_called_once()
         mock_mark_failed.assert_not_called()
@@ -113,7 +128,7 @@ class TestLambdaHandlerInvalidPayload:
         self, mock_s3, mock_validate, mock_acquire_lock, mock_mark_succeeded, mock_mark_failed
     ):
         mock_validate.return_value = _invalid_result()
-        event = _sqs_event(_sqs_record("bad-body", "msg-invalid"))
+        event = _sqs_event(_sqs_record(_s3_notification_body(), "msg-invalid"))
 
         result = lambda_handler(event, None)
 
@@ -123,12 +138,24 @@ class TestLambdaHandlerInvalidPayload:
         self, mock_s3, mock_validate, mock_acquire_lock, mock_mark_succeeded, mock_mark_failed
     ):
         mock_validate.return_value = _invalid_result()
-        lambda_handler(_sqs_event(_sqs_record("bad-body")), None)
+        lambda_handler(_sqs_event(_sqs_record(_s3_notification_body())), None)
 
         mock_s3.put_object.assert_not_called()
         mock_acquire_lock.assert_not_called()
         mock_mark_succeeded.assert_not_called()
         mock_mark_failed.assert_not_called()
+
+
+class TestLambdaHandlerMalformedSqsBody:
+    def test_malformed_json_body_adds_to_batch_item_failures(
+        self, mock_s3, mock_validate, mock_acquire_lock, mock_mark_succeeded, mock_mark_failed
+    ):
+        event = _sqs_event(_sqs_record("not-valid-json", "msg-bad"))
+
+        result = lambda_handler(event, None)
+
+        assert result["batchItemFailures"] == [{"itemIdentifier": "msg-bad"}]
+        mock_validate.assert_not_called()
 
 
 class TestLambdaHandlerDuplicateEvent:
@@ -137,7 +164,7 @@ class TestLambdaHandlerDuplicateEvent:
     ):
         mock_validate.return_value = _valid_result()
         mock_acquire_lock.side_effect = AlreadyProcessedError("already done")
-        event = _sqs_event(_sqs_record("any-body", "msg-dup"))
+        event = _sqs_event(_sqs_record(_s3_notification_body(), "msg-dup"))
 
         result = lambda_handler(event, None)
 
@@ -148,19 +175,29 @@ class TestLambdaHandlerDuplicateEvent:
     ):
         mock_validate.return_value = _valid_result()
         mock_acquire_lock.side_effect = AlreadyProcessedError("already done")
-        lambda_handler(_sqs_event(_sqs_record("any-body")), None)
+        lambda_handler(_sqs_event(_sqs_record(_s3_notification_body())), None)
 
         mock_s3.put_object.assert_not_called()
         mock_mark_failed.assert_not_called()
 
 
 class TestLambdaHandlerS3Failure:
+    def test_s3_read_failure_adds_to_batch_item_failures(
+        self, mock_s3, mock_validate, mock_acquire_lock, mock_mark_succeeded, mock_mark_failed
+    ):
+        mock_s3.get_object.side_effect = RuntimeError("S3 read unavailable")
+        event = _sqs_event(_sqs_record(_s3_notification_body(), "msg-s3-read-fail"))
+
+        result = lambda_handler(event, None)
+
+        assert result["batchItemFailures"] == [{"itemIdentifier": "msg-s3-read-fail"}]
+
     def test_s3_failure_adds_to_batch_item_failures(
         self, mock_s3, mock_validate, mock_acquire_lock, mock_mark_succeeded, mock_mark_failed
     ):
         mock_validate.return_value = _valid_result()
         mock_s3.put_object.side_effect = RuntimeError("S3 unavailable")
-        event = _sqs_event(_sqs_record("any-body", "msg-s3-fail"))
+        event = _sqs_event(_sqs_record(_s3_notification_body(), "msg-s3-fail"))
 
         result = lambda_handler(event, None)
 
@@ -171,7 +208,7 @@ class TestLambdaHandlerS3Failure:
     ):
         mock_validate.return_value = _valid_result()
         mock_s3.put_object.side_effect = RuntimeError("S3 unavailable")
-        lambda_handler(_sqs_event(_sqs_record("any-body")), None)
+        lambda_handler(_sqs_event(_sqs_record(_s3_notification_body())), None)
 
         mock_mark_failed.assert_called_once()
         mock_mark_succeeded.assert_not_called()
@@ -189,11 +226,11 @@ class TestLambdaHandlerMixedBatch:
             _valid_result(),
         ]
         records = [
-            _sqs_record("body", "msg-v1"),
-            _sqs_record("body", "msg-i1"),
-            _sqs_record("body", "msg-v2"),
-            _sqs_record("body", "msg-i2"),
-            _sqs_record("body", "msg-v3"),
+            _sqs_record(_s3_notification_body(), "msg-v1"),
+            _sqs_record(_s3_notification_body(), "msg-i1"),
+            _sqs_record(_s3_notification_body(), "msg-v2"),
+            _sqs_record(_s3_notification_body(), "msg-i2"),
+            _sqs_record(_s3_notification_body(), "msg-v3"),
         ]
         event = _sqs_event(*records)
 
