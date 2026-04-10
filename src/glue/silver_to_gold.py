@@ -1,5 +1,5 @@
 """
-Glue PySpark job: Silver -> Gold transition.
+Glue PySpark job: Silver - Gold transition.
 Responsibility: aggregate validated Silver data into feature-store-ready datasets
 and write to Gold S3 (consumed by Snowpipe).
 
@@ -29,7 +29,12 @@ job.init(args["JOB_NAME"], args)
 
 spark.conf.set("spark.sql.sources.partitionOverwriteMode", "dynamic")
 
-silver_df = spark.read.parquet(args["silver_path"])
+silver_df = (
+    spark.read
+    .option("recursiveFileLookup", "true")
+    .json(args["silver_path"])
+    .withColumn("ingestion_date", F.to_date(F.col("timestamp")))
+)
 
 gold_df = (
     silver_df.groupBy("user_id", "ingestion_date")
