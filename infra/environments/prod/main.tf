@@ -5,6 +5,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    time = {
+      source  = "hashicorp/time"
+      version = "~> 0.9"
+    }
   }
 
   backend "s3" {
@@ -122,6 +126,11 @@ resource "aws_sqs_queue_policy" "allow_s3" {
   })
 }
 
+resource "time_sleep" "wait_for_sqs_policy" {
+  depends_on      = [aws_sqs_queue_policy.allow_s3]
+  create_duration = "15s"
+}
+
 resource "aws_s3_bucket_notification" "bronze_to_sqs" {
   bucket = module.s3.bronze_bucket_id
 
@@ -132,5 +141,5 @@ resource "aws_s3_bucket_notification" "bronze_to_sqs" {
     filter_suffix = ".json"
   }
 
-  depends_on = [aws_sqs_queue_policy.allow_s3]
+  depends_on = [time_sleep.wait_for_sqs_policy]
 }
