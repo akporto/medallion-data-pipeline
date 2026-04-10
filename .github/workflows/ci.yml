@@ -1,0 +1,215 @@
+name: CI/CD
+
+# ── Trigger strategy ──────────────────────────────────────────────────────────
+# PR to develop  → lint + unit tests (gate before merge)
+# Push to develop → lint + unit tests + integration tests + deploy to dev (auto)
+# PR to main     → lint + unit tests (gate before merge)
+# Push to main   → lint + unit tests + integration tests + deploy to prod (manual approval)
+#
+# Single AWS account setup:
+# Both dev and prod deploy to the same AWS account using one role (AWS_ROLE_ARN).
+# Isolation is enforced by Terraform resource naming: medallion-dev-* vs medallion-prod-*.
+# The production gate is the GitHub Environment approval — not a separate AWS account.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  # ── Stage 1: Lint, format check, unit tests ────────────────────────────────
+  # Runs on every PR and every push (all branches defined above).
+  # This is the gate that must pass before any merge is allowed.
+  lint-and-test:
+    name: Lint & Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.7"
+
+      - name: Terraform fmt check
+        run: terraform fmt -check -recursive infra/
+
+      - name: Terraform validate — s3 module
+        run: terraform init -backend=false -input=false && terraform validate
+        working-directory: infra/modules/s3
+
+      - name: Terraform validate — sqs module
+        run: terraform init -backend=false -input=false && terraform validate
+        working-directory: infra/modules/sqs
+
+      - name: Terraform validate — lambda module
+        run: terraform init -backend=false -input=false && terraform validate
+        working-directory: infra/modules/lambda
+
+      - name: Terraform validate — dynamodb module
+        run: terraform init -backend=false -input=false && terraform validate
+        working-directory: infra/modules/dynamodb
+
+      - name: Terraform validate — glue module
+        run: terraform init -backend=false -input=false && terraform validate
+        working-directory: infra/modules/glue
+
+      - name: Terraform validate — iam module
+        run: terraform init -backend=false -input=false && terraform validate
+        working-directory: infra/modules/iam
+
+      - name: Run unit tests with coverage
+        run: pytest -m "not integration" --tb=short --cov --cov-report=xml
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+
+  # ── Stage 2: Integration tests ─────────────────────────────────────────────
+  # Runs only on direct pushes (after merge) — PRs from forks cannot access secrets.
+  # Uses the dev AWS account for all integration tests (creates/destroys temp resources).
+  integration-test:
+    name: Integration Tests (AWS dev)
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    if: github.event_name == 'push'
+
+    permissions:
+      id-token: write   # Required for OIDC token request
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Run integration tests
+        run: pytest -m integration --tb=short -q
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+
+  # ── Stage 3a: Deploy to dev ────────────────────────────────────────────────
+  # Triggered only on push to develop (after integration tests pass).
+  # Fully automatic — no approval required.
+  deploy-dev:
+    name: Deploy → dev
+    runs-on: ubuntu-latest
+    needs: integration-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.7"
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Build Lambda artifact
+        run: bash scripts/build_lambda.sh
+
+      - name: Terraform init — dev
+        run: terraform init -input=false
+        working-directory: infra/environments/dev
+
+      - name: Terraform apply — dev
+        run: terraform apply -var-file=terraform.tfvars -auto-approve
+        working-directory: infra/environments/dev
+
+  # ── Stage 3b: Deploy to prod ───────────────────────────────────────────────
+  # Triggered only on push to main (merge from develop).
+  # Requires manual approval via GitHub Environments before proceeding.
+  # Configure: GitHub repo → Settings → Environments → production → Required reviewers
+  deploy-prod:
+    name: Deploy → prod
+    runs-on: ubuntu-latest
+    needs: integration-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment: production   # ← blocks here until a reviewer approves in GitHub UI
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.7"
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Build Lambda artifact
+        run: bash scripts/build_lambda.sh
+
+      - name: Terraform init — prod
+        run: terraform init -input=false
+        working-directory: infra/environments/prod
+
+      - name: Terraform apply — prod
+        run: terraform apply -var-file=terraform.tfvars -auto-approve
+        working-directory: infra/environments/prod

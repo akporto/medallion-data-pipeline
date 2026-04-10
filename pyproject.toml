@@ -1,0 +1,18 @@
+[tool.pytest.ini_options]
+# Adds repo root to sys.path so "src.*" imports resolve without installation.
+pythonpath = ["."]
+testpaths = ["tests"]
+markers = [
+    "integration: marks tests as integration (requires real AWS or LocalStack, deselect with '-m \"not integration\"')",
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "src/glue/*",       # PySpark jobs require a Spark context to run
+    "src/generator/*",  # CLI tool tested manually
+]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 80
