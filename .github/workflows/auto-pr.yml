@@ -1,0 +1,31 @@
+name: Auto PR
+
+on:
+  push:
+    branches: ["feat/**", "fix/**", "chore/**"]
+
+jobs:
+  open-pr:
+    name: Open PR to develop
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create PR if not exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="${GITHUB_REF#refs/heads/}"
+          EXISTING=$(gh pr list --head "$BRANCH" --base develop --json number --jq length)
+          if [ "$EXISTING" -eq 0 ]; then
+            gh pr create \
+              --head "$BRANCH" \
+              --base develop \
+              --title "$BRANCH" \
+              --body "Automated PR from branch \`$BRANCH\`."
+          fi
