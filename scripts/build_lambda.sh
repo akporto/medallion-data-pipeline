@@ -35,10 +35,12 @@ pip install \
   --python-version 3.12 \
   --only-binary=:all:
 
-echo "==> Copying Lambda source files"
-cp "$SRC/handler.py"      "$BUILD_DIR/"
-cp "$SRC/idempotency.py"  "$BUILD_DIR/"
-cp "$SRC/validator.py"    "$BUILD_DIR/"
+echo "==> Copying Lambda source files (preserving validator package structure)"
+mkdir -p "$BUILD_DIR/validator"
+cp "$SRC/handler.py"      "$BUILD_DIR/validator/"
+cp "$SRC/idempotency.py"  "$BUILD_DIR/validator/"
+cp "$SRC/validator.py"    "$BUILD_DIR/validator/"
+touch "$BUILD_DIR/validator/__init__.py"
 
 echo "==> Copying schemas package (required by validator.py at runtime)"
 mkdir -p "$BUILD_DIR/src/schemas"
@@ -46,8 +48,18 @@ cp "$SCHEMAS/__init__.py"  "$BUILD_DIR/src/schemas/"
 cp "$SCHEMAS/ecommerce.py" "$BUILD_DIR/src/schemas/"
 touch "$BUILD_DIR/src/__init__.py"
 
+PYTHON_BIN=$(command -v python3 2>/dev/null || command -v python 2>/dev/null)
+
 echo "==> Creating artifacts/validator.zip"
 cd "$BUILD_DIR"
-zip -qr "$ARTIFACTS/validator.zip" .
+ZIP_OUT="$ARTIFACTS/validator.zip" "$PYTHON_BIN" -c "
+import zipfile, os
+zip_path = os.environ['ZIP_OUT']
+with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+    for root, dirs, files in os.walk('.'):
+        for file in files:
+            full = os.path.join(root, file)
+            zf.write(full, os.path.relpath(full, '.'))
+"
 
-echo "==> Done: $ARTIFACTS/validator.zip ($(du -sh "$ARTIFACTS/validator.zip" | cut -f1))"
+echo "==> Done: $ARTIFACTS/validator.zip"
