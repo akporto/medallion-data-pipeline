@@ -36,9 +36,9 @@ data "aws_iam_policy_document" "lambda_validator_policy" {
   }
 
   statement {
-    sid     = "WriteToSilverBucket"
-    effect  = "Allow"
-    actions = ["s3:PutObject"]
+    sid       = "WriteToSilverBucket"
+    effect    = "Allow"
+    actions   = ["s3:PutObject"]
     resources = ["${var.silver_bucket_arn}/validated/*"]
   }
 
@@ -109,8 +109,8 @@ resource "aws_iam_role_policy_attachment" "glue_service" {
 
 data "aws_iam_policy_document" "glue_s3" {
   statement {
-    sid    = "ReadFromBronzeAndSilver"
-    effect = "Allow"
+    sid     = "ReadFromBronzeAndSilver"
+    effect  = "Allow"
     actions = ["s3:GetObject", "s3:ListBucket"]
     resources = [
       var.bronze_bucket_arn,

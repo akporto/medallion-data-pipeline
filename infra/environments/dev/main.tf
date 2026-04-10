@@ -46,12 +46,12 @@ module "s3" {
 }
 
 module "dynamodb" {
-  source                     = "../../modules/dynamodb"
-  project                    = var.project
-  environment                = var.environment
-  enable_pitr                = var.enable_pitr
+  source                      = "../../modules/dynamodb"
+  project                     = var.project
+  environment                 = var.environment
+  enable_pitr                 = var.enable_pitr
   deletion_protection_enabled = var.dynamodb_deletion_protection
-  tags                       = var.tags
+  tags                        = var.tags
 }
 
 module "iam" {
@@ -67,19 +67,19 @@ module "iam" {
 }
 
 module "lambda" {
-  source                    = "../../modules/lambda"
-  project                   = var.project
-  environment               = var.environment
-  execution_role_arn        = module.iam.lambda_validator_role_arn
-  artifact_path             = var.lambda_artifact_path
-  silver_bucket_name        = module.s3.silver_bucket_id
-  idempotency_table_name    = module.dynamodb.table_name
-  ingestion_queue_arn       = module.sqs.ingestion_queue_arn
-  log_level                 = var.log_level
-  memory_size               = var.lambda_memory_size
-  timeout                   = var.lambda_timeout
-  idempotency_ttl_seconds   = var.idempotency_ttl_seconds
-  tags                      = var.tags
+  source                  = "../../modules/lambda"
+  project                 = var.project
+  environment             = var.environment
+  execution_role_arn      = module.iam.lambda_validator_role_arn
+  artifact_path           = var.lambda_artifact_path
+  silver_bucket_name      = module.s3.silver_bucket_id
+  idempotency_table_name  = module.dynamodb.table_name
+  ingestion_queue_arn     = module.sqs.ingestion_queue_arn
+  log_level               = var.log_level
+  memory_size             = var.lambda_memory_size
+  timeout                 = var.lambda_timeout
+  idempotency_ttl_seconds = var.idempotency_ttl_seconds
+  tags                    = var.tags
 }
 
 module "glue" {
