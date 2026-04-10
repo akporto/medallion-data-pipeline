@@ -17,7 +17,7 @@ resource "aws_lambda_function" "validator" {
   function_name = local.function_name
   description   = "Validates Bronze events via Pydantic and writes valid records to Silver S3."
   role          = var.execution_role_arn
-  handler       = "handler.lambda_handler"
+  handler       = "validator.handler.lambda_handler"
   runtime       = "python3.12"
   timeout       = var.timeout
   memory_size   = var.memory_size
