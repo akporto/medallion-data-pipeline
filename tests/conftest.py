@@ -19,8 +19,6 @@ import os
 import sys
 
 os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
-os.environ.setdefault("AWS_ACCESS_KEY_ID", "test")
-os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "test")
 os.environ.setdefault("IDEMPOTENCY_TABLE_NAME", "test-idempotency-table")
 os.environ.setdefault("IDEMPOTENCY_TTL_SECONDS", "3600")
 os.environ.setdefault("SILVER_BUCKET_NAME", "test-silver-bucket")

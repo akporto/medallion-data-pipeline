@@ -73,3 +73,29 @@ def silver_bucket(monkeypatch):
     for obj in response.get("Contents", []):
         s3.delete_object(Bucket=bucket_name, Key=obj["Key"])
     s3.delete_bucket(Bucket=bucket_name)
+
+
+@pytest.fixture(scope="function")
+def bronze_bucket(silver_bucket):
+    """
+    Creates an isolated Bronze S3 bucket for each test function.
+    Reuses the same S3 client from silver_bucket since handler._s3 is already patched.
+    Tears down (empties and deletes) the bucket after the test.
+    """
+    _, s3 = silver_bucket
+    bucket_name = f"test-bronze-{uuid.uuid4().hex[:8]}"
+
+    if _USE_LOCALSTACK or _REGION == "us-east-1":
+        s3.create_bucket(Bucket=bucket_name)
+    else:
+        s3.create_bucket(
+            Bucket=bucket_name,
+            CreateBucketConfiguration={"LocationConstraint": _REGION},
+        )
+
+    yield bucket_name, s3
+
+    response = s3.list_objects_v2(Bucket=bucket_name)
+    for obj in response.get("Contents", []):
+        s3.delete_object(Bucket=bucket_name, Key=obj["Key"])
+    s3.delete_bucket(Bucket=bucket_name)
