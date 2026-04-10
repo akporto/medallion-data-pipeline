@@ -36,6 +36,13 @@ data "aws_iam_policy_document" "lambda_validator_policy" {
   }
 
   statement {
+    sid       = "ReadFromBronzeBucket"
+    effect    = "Allow"
+    actions   = ["s3:GetObject"]
+    resources = ["${var.bronze_bucket_arn}/raw/*"]
+  }
+
+  statement {
     sid       = "WriteToSilverBucket"
     effect    = "Allow"
     actions   = ["s3:PutObject"]
