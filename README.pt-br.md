@@ -64,7 +64,7 @@ Os dados chegam fisicamente ao bucket Gold, compactados com o algoritmo Snappy (
 <br>
 A validação final. Consultar a camada Gold via Athena produz métricas de negócios precisas (Receita Diária, Sessões Ativas, Total de Usuários) com latência de milissegundos e sem a necessidade de um servidor de banco de dados dedicado.
 <br><br>
-<img src="docs/resultado_athena.png" width="800">
+<img src="docs/result_athena.png" width="800">
 </details>
 
 ---
