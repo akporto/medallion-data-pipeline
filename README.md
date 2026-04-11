@@ -1,5 +1,7 @@
 # AWS Serverless Medallion Pipeline (V1 MVP)
 
+> 🇧🇷 *Para a versão em português deste documento, [clique aqui](./README.pt-br.md).*
+
 This repository contains a fully serverless, event-driven Data Engineering pipeline built on AWS. It implements the Medallion Architecture (Bronze, Silver, Gold) handling data ingestion, validation, idempotency, and ETL processing, culminating in actionable business metrics via SQL.
 
 > **🚀 Evolution Note:** This is the V1.0.0 Architecture (SQS + Lambda + Glue). The V2 evolution incorporating Kinesis Data Firehose, AWS Step Functions, and Snowflake Snowpipe is currently under active development.
@@ -70,3 +72,9 @@ The final validation. Querying the Gold layer via Athena yields accurate busines
 * **Cloud:** AWS (SQS, Lambda, DynamoDB, S3, Glue, Athena)
 * **IaC:** Terraform
 * **Languages:** Python (Boto3, Pydantic, PySpark), SQL
+
+---
+## 👩‍💻 Author
+**Ana Kellen Nogueira Porto** *Backend Developer*
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/ana-kellen-nogueira-porto/)
+[![GitHub](https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white)](https://github.com/akporto)
